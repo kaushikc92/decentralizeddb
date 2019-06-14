@@ -20,7 +20,7 @@ import (
 
 type databaseconfig struct {
 	dbname string
-	n      int
+	nNodes int
 }
 
 var dbconfig databaseconfig
@@ -39,16 +39,13 @@ func handleStream(stream network.Stream) {
 }
 
 func connectNode(rw *bufio.ReadWriter) {
-	_, _ = rw.WriteString(fmt.Sprintf("%s %d\n", dbconfig.dbname, dbconfig.n))
+	//_, _ = rw.WriteString(fmt.Sprintf("%s %d\n", dbconfig.dbname, dbconfig.n))
+	_, _ = rw.WriteString(fmt.Sprintf("%s\n", dbconfig.dbname))
+	_, _ = rw.WriteString(fmt.Sprintf("%d\n", dbconfig.nNodes))
 	_ = rw.Flush()
 
-	for {
-		str, _ := rw.ReadString('\n')
-		if str != "\n" && str != "" {
-			fmt.Printf("\x1b[32m%s\x1b[0m", str)
-			break
-		}
-	}
+	str, _ := rw.ReadString('\n')
+	fmt.Printf("\x1b[32m%s\x1b[0m", str)
 }
 
 func readData(rw *bufio.ReadWriter) {
@@ -95,16 +92,16 @@ func writeData(rw *bufio.ReadWriter) {
 	}
 }
 
-func announceDatabase(ctx context.Context, host host.Host, routingDiscovery *discovery.RoutingDiscovery) {
+func announceDatabase(host host.Host, routingDiscovery *discovery.RoutingDiscovery) {
 	host.SetStreamHandler(protocol.ID("/picolo/1.0"), handleStream)
 	fmt.Println("Announcing ourselves...")
-	discovery.Advertise(ctx, routingDiscovery, "Database Bootstrap")
+	discovery.Advertise(context.Background(), routingDiscovery, "Database Bootstrap")
 	fmt.Println("Successfully announced!")
 }
 
-func connectToDatabase(ctx context.Context, host host.Host, routingDiscovery *discovery.RoutingDiscovery) {
+func connectToDatabase(host host.Host, routingDiscovery *discovery.RoutingDiscovery) {
 	fmt.Println("Searching for other peers...")
-	peerChan, err := routingDiscovery.FindPeers(ctx, "Database Bootstrap")
+	peerChan, err := routingDiscovery.FindPeers(context.Background(), "Database Bootstrap")
 	if err != nil {
 		panic(err)
 	}
@@ -116,7 +113,7 @@ func connectToDatabase(ctx context.Context, host host.Host, routingDiscovery *di
 		fmt.Println("Found peer:", peer)
 
 		fmt.Println("Connecting to:", peer)
-		stream, err := host.NewStream(ctx, peer.ID, protocol.ID("/picolo/1.0"))
+		stream, err := host.NewStream(context.Background(), peer.ID, protocol.ID("/picolo/1.0"))
 
 		if err != nil {
 			fmt.Println("Connection failed:", err)
@@ -127,13 +124,11 @@ func connectToDatabase(ctx context.Context, host host.Host, routingDiscovery *di
 			_, _ = rw.WriteString(fmt.Sprintf("%s\n", "connect"))
 			_ = rw.Flush()
 
-			for {
-				str, _ := rw.ReadString('\n')
-				if str != "\n" && str != "" {
-					fmt.Printf("\x1b[32m%s\x1b[0m", str)
-					break
-				}
-			}
+			str, _ := rw.ReadString('\n')
+			fmt.Printf("\x1b[32m%s\x1b[0m", str)
+
+			str, _ = rw.ReadString('\n')
+			fmt.Printf("\x1b[32m%s\x1b[0m", str)
 
 			_, _ = rw.WriteString(fmt.Sprintf("%s\n", peer.ID))
 			_ = rw.Flush()
@@ -148,12 +143,12 @@ func main() {
 	sourcePort := flag.Int("p", 3001, "Port number")
 	mode := flag.String("m", "announce", "Mode")
 	dbname := flag.String("d", "mydb", "Database Name")
-	n := flag.Int("n", 1, "Number of nodes")
+	nNodes := flag.Int("n", 1, "Number of nodes")
 
 	flag.Parse()
 
 	dbconfig.dbname = *dbname
-	dbconfig.n = *n
+	dbconfig.nNodes = *nNodes
 
 	ctx := context.Background()
 	host, err := libp2p.New(ctx,
@@ -187,9 +182,9 @@ func main() {
 	routingDiscovery := discovery.NewRoutingDiscovery(kademliaDHT)
 
 	if *mode == "connect" {
-		connectToDatabase(ctx, host, routingDiscovery)
+		connectToDatabase(host, routingDiscovery)
 	} else {
-		announceDatabase(ctx, host, routingDiscovery)
+		announceDatabase(host, routingDiscovery)
 	}
 
 	select {}
